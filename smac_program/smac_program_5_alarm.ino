@@ -78,7 +78,7 @@ int ringingAlarmIdx = -1; // which alarm triggered
 
 // ── Debounce ──
 unsigned long lastJoyMove = 0;
-#define JOY_DEBOUNCE 200
+#define JOY_DEBOUNCE 200 //in miliseconds
 unsigned long lastBtnPress = 0;
 #define BTN_DEBOUNCE 300
 
@@ -90,9 +90,9 @@ static const unsigned char PROGMEM cat_bits[] = {
   0x21,0x24,0x20,0x10,0xd8,0x40,0x0c,0x01,0x80,0x03,0xfe,0x00
 };
 
-// ────────────────────────────────
+
 // ADC
-// ────────────────────────────────
+
 void setupADC() {
   adc1_config_width(ADC_WIDTH_BIT_12);
   adc1_config_channel_atten(ADC1_CHANNEL_4, ADC_ATTEN_DB_11);
@@ -102,9 +102,8 @@ void setupADC() {
 int readJoyX() { return adc1_get_raw(JOY_X); }
 int readJoyY() { return adc1_get_raw(JOY_Y); }
 
-// ────────────────────────────────
-// I2S AUDIO
-// ────────────────────────────────
+//I2S AUDIO
+
 void setupI2S() {
   i2s_config_t i2s_config = {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
@@ -178,9 +177,8 @@ void alarmTask(void* param) {
   }
 }
 
-// ────────────────────────────────
 // WIFI + NTP
-// ────────────────────────────────
+
 void drawWifiScreen(int dots) {
   display.clearDisplay();
   display.setTextSize(1);
@@ -241,9 +239,9 @@ void checkResync() {
   }
 }
 
-// ────────────────────────────────
+
 // HELPERS
-// ────────────────────────────────
+
 void printTwo(int val) {
   if (val < 10) display.print("0");
   display.print(val);
@@ -269,9 +267,8 @@ bool getBtnPress() {
   return false;
 }
 
-// ────────────────────────────────
 // CLOCK TICK
-// ────────────────────────────────
+
 void tickClock() {
   static unsigned long lastTick = 0;
   if (millis() - lastTick >= 1000) {
@@ -295,9 +292,9 @@ void tickClock() {
   }
 }
 
-// ────────────────────────────────
+
 // SCREENS
-// ────────────────────────────────
+
 void drawClock() {
   display.clearDisplay();
   display.drawBitmap(0, 0, cat_bits, 22, 16, WHITE);
@@ -463,9 +460,9 @@ void drawAlarmOn() {
   display.display();
 }
 
-// ────────────────────────────────
+
 // HANDLERS
-// ────────────────────────────────
+
 void handleMenu() {
   String dir = getJoyDir();
   if (dir == "UP")   menuIndex = (menuIndex - 1 + MENU_ITEMS) % MENU_ITEMS;
@@ -521,9 +518,9 @@ void handleSetAlarm() {
   }
 }
 
-// ────────────────────────────────
+
 // SETUP
-// ────────────────────────────────
+
 void setup() {
   Serial.begin(115200);
   pinMode(JOY_BTN, INPUT_PULLUP);
@@ -555,9 +552,9 @@ void setup() {
   Serial.println("SMAC ready!");
 }
 
-// ────────────────────────────────
+
 // LOOP
-// ────────────────────────────────
+
 void loop() {
   tickClock();
   checkResync();
