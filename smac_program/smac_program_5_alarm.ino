@@ -357,32 +357,28 @@ void drawAlarmList() {
   display.println("Alarms");
   display.drawLine(0, 10, 128, 10, WHITE);
 
-  // show up to 4 alarms at a time
+  // show only 3 alarms at a time
   int startIdx = 0;
-  if (alarmListIndex >= 4) startIdx = alarmListIndex - 3;
+  if (alarmListIndex >= 3) startIdx = alarmListIndex - 2;
 
-  for (int i = startIdx; i < MAX_ALARMS && i < startIdx + 4; i++) {
-    int y = 14 + ((i - startIdx) * 12);
+  for (int i = startIdx; i < MAX_ALARMS && i < startIdx + 3; i++) {
+    int y = 14 + ((i - startIdx) * 14); // more spacing between rows
+
     display.setCursor(0, y);
 
-    // arrow for selected alarm
     if (i == alarmListIndex) {
       display.print(">");
     } else {
       display.print(" ");
     }
 
-    // alarm number
     display.print(i + 1);
     display.print(": ");
-
-    // alarm time
     printTwo(alarms[i].h);
     display.print(":");
     printTwo(alarms[i].m);
     display.print(" ");
 
-    // on/off status
     if (alarms[i].active) {
       display.print("[ON] ");
     } else {
@@ -390,12 +386,21 @@ void drawAlarmList() {
     }
   }
 
-  // instructions at bottom
+  // scroll indicator
+  display.setCursor(120, 14);
+  display.print(alarmListIndex + 1);
+  display.setCursor(120, 22);
+  display.print("/");
+  display.setCursor(120, 30);
+  display.print(MAX_ALARMS);
+
+  // instructions with more breathing room
+  display.drawLine(0, 52, 128, 52, WHITE);
   display.setCursor(0, 56);
   display.print("BTN:edit L/R:on/off");
+
   display.display();
 }
-
 // edit a specific alarm time
 void drawSetAlarm() {
   display.clearDisplay();
