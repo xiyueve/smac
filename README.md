@@ -12,4 +12,6 @@ App: able to control the alarms and set custom sounds???
 
 Run is so hungry right now.
 
-Script: Show Run waking up and snooze alarm. Realises it is one o clock and he missed his test
+Script: 
+Show Run waking up and snooze alarm. Realises it is one o'clock and he missed his test
+
