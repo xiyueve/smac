@@ -453,12 +453,14 @@ void drawAlarmOn() {
   // show which alarm triggered
   display.setTextSize(1);
   display.setCursor(30, 38);
-  display.print("Alarm ");
-  display.print(ringingAlarmIdx + 1);
-  display.print(": ");
-  printTwo(alarms[ringingAlarmIdx].h);
-  display.print(":");
-  printTwo(alarms[ringingAlarmIdx].m);
+  if (ringingAlarmIdx >= 0) {
+    display.print("Alarm ");
+    display.print(ringingAlarmIdx + 1);
+    display.print(": ");
+    printTwo(alarms[ringingAlarmIdx].h);
+    display.print(":");
+    printTwo(alarms[ringingAlarmIdx].m);
+  }
 
   display.setCursor(5, 52);
   display.println("SMACK ME to stop!");
