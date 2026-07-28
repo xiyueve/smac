@@ -7,6 +7,9 @@
 #include <WiFi.h>
 #include <time.h>
 
+#include <WebServer.h>
+WebServer server(80);
+
 const char* ssid     = "Eve";
 const char* password = "iloveesp2026";
 
@@ -524,6 +527,46 @@ void handleSetAlarm() {
   }
 }
 
+//web server stuff
+//Basic html
+//lets the ESP32 act like a tiny website host.
+//Creates a web server that listens on port 80
+//
+void setupWebServer() {
+  server.on("/", []() {//run code on start 
+    String h = "";
+    String m = "";
+    String msg = "";
+    if (server.hasArg("h") && server.hasArg("m") && server.hasArg("slot")) {//if submit set the alarms to the values
+      int slot = server.arg("slot").toInt();
+      if (slot >= 0 && slot < MAX_ALARMS) {
+        alarms[slot].h = server.arg("h").toInt();
+        alarms[slot].m = server.arg("m").toInt();
+        alarms[slot].active = true;
+        msg = "Alarm " + String(slot + 1) + " set!";
+      }
+    }
+    String page = "<html><body style='font-family:sans-serif;max-width:400px;margin:auto;padding:20px'>";
+    page += "<h2>SMAC Alarms</h2>";
+    page += "<p>Current time: " + String(clockH) + ":" + (clockM < 10 ? "0" : "") + String(clockM) + "</p>";//formating to make nice 
+    if (msg != "") page += "<p style='color:green'>" + msg + "</p>";
+    page += "<form method='GET'>";
+    page += "Alarm slot: <select name='slot'>";
+    for (int i = 0; i < MAX_ALARMS; i++) {//data function copy paste from google 
+      page += "<option value='" + String(i) + "'>Alarm " + String(i+1) + " (" + String(alarms[i].h) + ":" + (alarms[i].m < 10 ? "0" : "") + String(alarms[i].m) + (alarms[i].active ? " ON" : " OFF") + ")</option>";
+    }
+    page += "</select><br><br>";
+    page += "Hour: <input type='number' name='h' min='0' max='23' style='width:60px'><br><br>";
+    page += "Min: <input type='number' name='m' min='0' max='59' style='width:60px'><br><br>";
+    page += "<input type='submit' value='Set Alarm' style='padding:10px 20px'>";
+    page += "</form></body></html>";
+    server.send(200, "text/html", page);
+  });
+  server.begin();
+  Serial.print("Web server at: http://");
+  Serial.println(WiFi.localIP());
+}
+
 
 // SETUP
 
@@ -550,6 +593,7 @@ void setup() {
 
   connectWifi();
   syncTime();
+  setupWebServer();
 
   setupI2S();
   xTaskCreatePinnedToCore(alarmTask, "AlarmTask", 4096, NULL, 1, NULL, 0);
@@ -562,6 +606,7 @@ void setup() {
 // LOOP
 
 void loop() {
+  server.handleClient();
   tickClock();
   checkResync();
 
