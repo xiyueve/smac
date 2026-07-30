@@ -882,7 +882,7 @@ void loop() {
   else if (currentScreen == SCREEN_ALARM_ON) {
     drawAlarmOn();
     if (!digitalRead(STOP_BTN)) {
-      stopMotor();
+      stopMotors();
       delay(50);
       alarmRinging = false;
       currentScreen = SCREEN_CLOCK;
