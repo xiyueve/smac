@@ -52,7 +52,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 #define BEEP_FREQ    1000
 #define BEEP_ON_MS   400
 #define BEEP_OFF_MS  200
-#define VOLUME       0.5
+#define VOLUME       1
 
 #define STOP_BTN JOY_BTN
 
