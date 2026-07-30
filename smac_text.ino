@@ -316,6 +316,7 @@ void tickClock() {
 
         // send discord notification
         String msg = "⏰ **SMAC Alarm " + String(i + 1) + " going off!**\n";
+        msg +="**Habibi wake up, you got stuff to do**\n";
         msg += "🕐 Time: **" + String(alarms[i].h) + ":";
         msg += (alarms[i].m < 10 ? "0" : "") + String(alarms[i].m) + "**\n";
 
