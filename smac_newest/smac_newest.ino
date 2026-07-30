@@ -10,12 +10,28 @@
 #include <WebServer.h>
 WebServer server(80);
 
-const char* ssid     = "MyOptimum df858f";
-const char* password = "24-rose-3111";
+const char* ssid     = "Eve";
+const char* password = "iloveesp2026";
 
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset = -18000;
 const int   dstOffset = 3600;
+
+const int LEFT_MOTOR_A = 25; // A-1A
+const int RIGHT_MOTOR_A = 16; // B-1A
+const int LEFT_MOTOR_B = 26; // A-1B
+const int RIGHT_MOTOR_B = 17; // B-2A
+const int fullSpeed = 255; // full speed at which motors can operate
+
+const float midSpeed = (0.85)*fullSpeed;   // 50% speed
+
+float operatingSpeed = midSpeed;  //present speed of motors
+float aMotorTrim  = 0.80; 
+float bMotorTrim = 1.00;
+
+const int IR_SENSOR_PIN = 19;
+bool irObstacle;   // true if obstacle present else false
+unsigned long lastActionTime = 0; // tracks the last time any movement command what executed
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -78,6 +94,10 @@ int editingAlarm = 0;    // which alarm is being edited
 int editField = 0;       // 0 = hours, 1 = minutes
 bool alarmRinging = false;
 int ringingAlarmIdx = -1; // which alarm triggered
+
+const int TRIG_PIN = 5;
+const int ECHO_PIN = 18;
+float frontDist;   // distance of object from front
 
 // ── Debounce ──
 unsigned long lastJoyMove = 0;
@@ -572,10 +592,6 @@ void setupWebServer() {
 
 void setup() {
   Serial.begin(115200);
-  pinMode(JOY_BTN, INPUT_PULLUP);
-  pinMode(STOP_BTN, INPUT_PULLUP);
-
-  setupADC();
 
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.clearDisplay();
@@ -600,6 +616,23 @@ void setup() {
 
   currentScreen = SCREEN_CLOCK;
   Serial.println("SMAC ready!");
+
+  pinMode(JOY_BTN, INPUT_PULLUP);
+  pinMode(STOP_BTN, INPUT_PULLUP);
+
+  // Set all motor control pins as outputs
+  pinMode(LEFT_MOTOR_A, OUTPUT);
+  pinMode(LEFT_MOTOR_B, OUTPUT);
+  pinMode(RIGHT_MOTOR_A, OUTPUT);
+  pinMode(RIGHT_MOTOR_B, OUTPUT);
+  
+  // Ensure everything starts turned off
+  stopMotors();
+
+  pinMode(IR_SENSOR_PIN, INPUT); // Set GPIO 19 as an INPUT pin
+
+  setupADC();
+
 }
 
 
@@ -637,4 +670,92 @@ void loop() {
       currentScreen = SCREEN_CLOCK;
     }
   }
+
+  //detecting if object present at back
+
+  // ultrasonic code 
+  #if zero
+  frontDist = readUltrasonicDistance();
+  #end if 
+
+  // IR code
+  irObstacle = (digitalRead(IR_SENSOR_PIN) == LOW); // LOW means object detected
+
+  if (irObstacle) {
+    Serial.println("Object detected!");
+  }
+
+
+  // Setting up operating speeds depending on any object behind the clock
+  if (irObstacle) {
+    Serial.println("moving backward");
+    moveBackward();
+    delay(500);
+
+    Serial.println("turning right");
+    turnRight();
+    delay(500);
+  } 
+  else {
+    Serial.println("moving forward");
+    moveForward();
+  }
+
+}
+
+// ================= motor code 
+
+// Function for basic forward movement in case of no significant event required (turn left, turn right or speed up)
+// Use same function for speed up but set operatingSpeed == midSpeed or fastSpeed (after testing)
+void moveForward() {
+  //Left motor
+  analogWrite(RIGHT_MOTOR_A, 0);
+  analogWrite(RIGHT_MOTOR_B, operatingSpeed*aMotorTrim);
+  //Right motor
+  analogWrite(LEFT_MOTOR_A, operatingSpeed*bMotorTrim);
+  analogWrite(LEFT_MOTOR_B, 0);
+  
+}
+
+void moveBackward() {
+  //Left Motor
+  analogWrite(RIGHT_MOTOR_A, operatingSpeed*aMotorTrim);
+  analogWrite(RIGHT_MOTOR_B, 0);
+  //Right Motor
+  analogWrite(LEFT_MOTOR_A, 0);
+  analogWrite(LEFT_MOTOR_B, operatingSpeed*bMotorTrim);
+  
+}
+
+// Function to turn right
+void turnRight() {
+  analogWrite(RIGHT_MOTOR_A, 0);
+  analogWrite(RIGHT_MOTOR_B, operatingSpeed);
+
+  analogWrite(LEFT_MOTOR_A, 0);
+  analogWrite(LEFT_MOTOR_B, operatingSpeed);
+  
+}
+
+
+// Stop the motors
+void stopMotors() {
+  analogWrite(LEFT_MOTOR_A, 0);
+  analogWrite(RIGHT_MOTOR_A, 0);
+  analogWrite(LEFT_MOTOR_B, 0);
+  analogWrite(RIGHT_MOTOR_B, 0);
+}
+
+float readUltrasonicDistance() {
+  //send the ping
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  //read for time taken by the signal
+  long duration = pulseIn(ECHO_PIN, HIGH);
+  //that time into speed of sound
+  return (duration * 0.034) / 2.0;
 }
