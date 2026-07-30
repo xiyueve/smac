@@ -310,8 +310,9 @@ bool getBtnPress() {
   return false;
 }
 
+// ────────────────────────────────
 // CLOCK TICK
-
+// ────────────────────────────────
 void tickClock() {
   static unsigned long lastTick = 0;
   if (millis() - lastTick >= 1000) {
@@ -321,7 +322,6 @@ void tickClock() {
     if (clockM >= 60) { clockM = 0; clockH++; }
     if (clockH >= 24) { clockH = 0; }
 
-    // check ALL alarms every second
     for (int i = 0; i < MAX_ALARMS; i++) {
       if (alarms[i].active &&
           clockH == alarms[i].h &&
@@ -330,6 +330,29 @@ void tickClock() {
         alarmRinging = true;
         ringingAlarmIdx = i;
         currentScreen = SCREEN_ALARM_ON;
+
+        // send discord notification
+        String msg = "⏰ **SMAC Alarm " + String(i + 1) + " going off!**\n";
+        msg += "**" + alarms[i].name + "**\n";
+        msg += "**You need to wake up, you got stuff to do!**\n";
+        msg += "Your friends are sick of you sleeping!\n"
+        msg += "https://cdn.discordapp.com/attachments/841879601667637248/1391084208780476587/zt.gif?ex=6a6b7320&is=6a6a21a0&hm=dc0f37d35aed7dde9aeb771397226da4ef2915ee0b0db4c688689b9f66eca09d&";
+        msg += "🕐 Time: **" + String(alarms[i].h) + ":";
+        msg += (alarms[i].m < 10 ? "0" : "") + String(alarms[i].m) + "**\n";
+
+        // list upcoming alarms
+        bool hasUpcoming = false;
+        String upcoming = "📋 Upcoming alarms:\n";
+        for (int j = 0; j < MAX_ALARMS; j++) {
+          if (alarms[j].active && j != i) {
+            upcoming += "• " + alarms[j].name + " (Alarm " + String(j + 1) + "): ";
+            upcoming += String(alarms[j].h) + ":";
+            upcoming += (alarms[j].m < 10 ? "0" : "") + String(alarms[j].m) + "\n";
+            hasUpcoming = true;
+          }
+        }
+        msg += hasUpcoming ? upcoming : "📋 No more alarms scheduled";
+        sendDiscord(msg);
       }
     }
   }
