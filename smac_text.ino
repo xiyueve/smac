@@ -14,8 +14,7 @@ WebServer server(80);
 const char* ssid         = "MyOptimum df858f";
 const char* password     = "24-rose-3111";
 // add your own discord webhook 
-const char* discordWebhook = "https://discord.com/api/webhooks/
-";
+const char* discordWebhook = "https://discord.com/api/webhooks/";
 
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset = -18000;
