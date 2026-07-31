@@ -23,8 +23,8 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset = -18000;
 const int   dstOffset = 3600;
 
-int lat = -999;
-int lon = -999;
+float lat = -999;
+float lon = -999;
 float t_high;
 float t_low;
 float temp;
@@ -898,12 +898,12 @@ void handleWebPage() {
       <button class='btn' type='submit'>Save Weather settings</button>
     </form>
     <div class='status'>)";
-  page += (lat != -999) || (lon != -999) ? "Weather configured" : "Weather not configured";
+  page += (lat >= -90 && lat<=90) || (lon >= 0 && lon <= 360) ? "Weather configured" : "Weather not configured";
   page += R"(</div>
-    <div class='hint'>Use your coordinates to set the weather report in SMAC.</div>
+    <div class='hint'>Use your coordinates to set the weather report in SMAC. Input latitude between [-90, 90] and longitude between [0, 360].</div>
   </div>)";
 
-  <div class='divider'></div>
+  page += R"(<div class='divider'></div>
   <div class='section-title'>Discord settings</div>
   <div class='box'>
     <form method='POST'>
