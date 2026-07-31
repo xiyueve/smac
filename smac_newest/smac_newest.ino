@@ -12,8 +12,8 @@
 WebServer server(80);
 Preferences preferences;
 
-const char* ssid     = "MyOptimum df858f";
-const char* password = "24-rose-3111";
+const char* ssid     = "Ritu_Pixel";
+const char* password = "Ritzphoenix07";
 
 // Configured from the web app and persisted in ESP32 flash.
 String discordWebhookUrl = "";
@@ -22,6 +22,16 @@ String userName = "";
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset = -18000;
 const int   dstOffset = 3600;
+
+int lat;
+int lon;
+float t_high;
+float t_low;
+float temp;
+float humidity;
+String w_desc;
+
+const char* wthrServer = "https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API key}";
 
 const int LEFT_MOTOR_A = 25; // A-1A
 const int RIGHT_MOTOR_A = 16; // B-1A
@@ -67,13 +77,14 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 #define SCREEN_ALARM_LIST   2  // shows all alarms
 #define SCREEN_SET_ALARM    3  // edit one alarm
 #define SCREEN_ALARM_ON     4
+#define SCREEN_WEATHER
 
 int currentScreen = SCREEN_CLOCK;
 
 // ── Menu ──
 int menuIndex = 0;
-const int MENU_ITEMS = 2;
-String menuOptions[] = {"Clock", "Alarms"};
+const int MENU_ITEMS = 3;
+String menuOptions[] = {"Clock", "Alarms", "Weather"};
 
 // ── Time ──
 int clockH = 0, clockM = 0, clockS = 0;
@@ -305,6 +316,26 @@ void syncTime() {
   }
 }
 
+void syncWeather(){
+  if (WiFi.status() == WL_CONNECTED) {
+    http.begin(wthrServer);
+    int httpResponseCode = http.GET();
+    
+    if (httpResponseCode > 0) {
+      String payload = http.getString();
+      JsonDocument doc;
+      deserializeJson(doc, payload);
+      
+      temp = doc["main"]["temp"];
+      t_high = doc["main"]["temp_max"];
+      t_low = doc["main"]["temp_min"];
+      humidity = doc["main"]["humidity"];
+      w_desc = doc["weather"]["description"];
+    }
+    http.end();
+  }
+}
+
 void checkResync() {
   static unsigned long lastSync = 0;
   if (millis() - lastSync > 3600000) {
@@ -372,6 +403,7 @@ void tickClock() {
         String msg = "⏰ **SMAC Alarm " + String(i + 1) + " going off!**\n";
         if (userName.length() > 0) {
           msg += "🚨 **" + userName + ", wake up!**\n";
+          msg += "@everyone " + userName + " hasn't woken up yet!\n";
         } else {
           msg += "🚨 **Wake up!**\n";
         }
@@ -450,6 +482,26 @@ void drawMenu() {
     display.print(i == menuIndex ? "> " : "  ");
     display.println(menuOptions[i]);
   }
+  display.display();
+}
+
+void drawWeather() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(40, 0);
+  display.println("WEATHER");
+  display.drawLine(0, 10, 128, 10, WHITE);
+  display.setCursor(10,16);
+  display.println("Displaying Weather for (insert date)");
+  display.println("Desc: " + w_desc);
+  display.println("Temp Now (Celsius): " + temp);
+  display.println("High Temp: " + t_high);
+  display.println("Low Temp: " + t_low);
+  display.println("Weather Status: " + w_desc);
+  display.drawLine(0, 10, 128, 10, WHITE);
+  display.setCursor(0, 56);
+  display.print("BTN:return to clock");
   display.display();
 }
 
@@ -575,6 +627,7 @@ void handleMenu() {
   if (getBtnPress()) {
     if (menuIndex == 0) currentScreen = SCREEN_CLOCK;
     if (menuIndex == 1) { currentScreen = SCREEN_ALARM_LIST; alarmListIndex = 0; }
+    if (menuIndex == 2) currentScreen = SCREEN_WEATHER;
   }
 }
 
@@ -588,6 +641,12 @@ void handleAlarmList() {
     editingAlarm = alarmListIndex;
     editField = 0;
     currentScreen = SCREEN_SET_ALARM;
+  }
+}
+
+void handleWeather(){
+   if (getBtnPress()) {
+    currentScreen = SCREEN_CLOCK;
   }
 }
 
@@ -930,6 +989,10 @@ void loop() {
   else if (currentScreen == SCREEN_SET_ALARM) {
     drawSetAlarm();
     handleSetAlarm();
+  }
+  else if (currentScreen = SCREEN_WEATHER){
+    drawWeather();
+    handleWeather();    
   }
   else if (currentScreen == SCREEN_ALARM_ON) {
     drawAlarmOn();
