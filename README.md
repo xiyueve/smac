@@ -1,5 +1,5 @@
-# smac
-SMAC is a custom alarm clock built for the IEEE SCS Arduino Contest in summer 2026. 
+# SMAC Introduction
+SMAC is a custom alarm clock built for the IEEE SSCS Arduino Contest in summer 2026. 
 
 Problem: When I set a alarm on my phone, I subconsiously snooze it and end up missing my exams.
 
@@ -17,7 +17,7 @@ Run is so hungry right now. Eve wants to sleep. Ritika is just present.
 
 Contributors: Run Chen, Ritika Lakare, Eve Lin
 
-(only three contributors! the other two are GitHub bugs and we don't know how to remove them)
+(only three contributors! the other two are GitHub bugs from typos in config emails and we don't know how to remove them)
 
 Onshape CAD Link: https://cad.onshape.com/documents/705f07fd725f13b6975b72cf/w/4ede6a8dc0b073a9e3ac7d01/e/401cd94a81c59bbd3510c62c 
 
