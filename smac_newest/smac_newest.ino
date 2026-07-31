@@ -23,8 +23,8 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset = -18000;
 const int   dstOffset = 3600;
 
-int lat;
-int lon;
+int lat = -1;
+int lon = -1;
 float t_high;
 float t_low;
 float temp;
@@ -492,14 +492,22 @@ void drawWeather() {
   display.setCursor(40, 0);
   display.println("WEATHER");
   display.drawLine(0, 10, 128, 10, WHITE);
-  display.setCursor(10,16);
+  display.setCursor(10,9);
   display.println("Displaying Weather for (insert date)");
-  display.println("Desc: " + w_desc);
-  display.println("Temp Now (Celsius): " + temp);
-  display.println("High Temp: " + t_high);
-  display.println("Low Temp: " + t_low);
-  display.println("Weather Status: " + w_desc);
-  display.drawLine(0, 10, 128, 10, WHITE);
+  display.setCursor(10,18);
+  display.print("Desc: ");
+  display.println(w_desc);
+  display.setCursor(10,27);
+  display.print("Temp Now (Celsius): ");
+  display.println(temp);
+  display.setCursor(10,36);
+  display.print("High/Low Temp: ");
+  display.print(t_high);
+  display.print("; ");
+  display.println(t_low);
+  display.setCursor(10,45);
+  display.print("Weather Status: ");
+  display.println(w_desc);
   display.setCursor(0, 56);
   display.print("BTN:return to clock");
   display.display();
@@ -868,6 +876,32 @@ void handleWebPage() {
     </form>
     <div class='hint'>Saving an alarm turns it ON. Use the ON/OFF button above to disable it.</div>
   </div>
+
+  <div class='divider'></div>
+  <div class='section-title'>Weather settings</div>
+  <div class='box'>
+    <form method='POST'>
+      <input type='hidden' name='action' value='settings'>
+      <div class='field' style='margin-bottom:11px'>
+        <label>Latitude</label>
+        <input type='text' name='lat' maxlength='32' value=')";
+  page += htmlEscape(lat);
+  page += R"(' placeholder='e.g. 32'>
+      </div>
+      <div class='field'>
+        <label>Longitude</label>
+        <input type='text' name='longitude' placeholder=')";
+  page += (lat != -1) || (lon != -1) ? "Saved — leave blank to keep it" : "Input coordinates";
+  page += R"(' autocomplete='off'>
+      </div>
+      <label class='checkbox'><input type='checkbox' name='clearCoord' value='1'> Clear the saved coordinates</label>
+      <button class='btn' type='submit'>Save Weather settings</button>
+    </form>
+    <div class='status'>)";
+  page += (lat != -1) || (lon != -1) ? "Weather configured" : "Weather not configured";
+  page += R"(</div>
+    <div class='hint'>Use your coordinates to set the weather report in SMAC.</div>
+  </div>)";
 
   <div class='divider'></div>
   <div class='section-title'>Discord settings</div>
