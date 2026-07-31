@@ -101,6 +101,7 @@ int editingAlarm = 0;    // which alarm is being edited
 int editField = 0;       // 0 = hours, 1 = minutes
 bool alarmRinging = false;
 int ringingAlarmIdx = -1; // which alarm triggered
+unsigned long alarmStartMillis = 0; // when the current alarm started ringing
 
 const int TRIG_PIN = 5;
 const int ECHO_PIN = 18;
@@ -364,6 +365,7 @@ void tickClock() {
           clockS == 0) {
         alarmRinging = true;
         ringingAlarmIdx = i;
+        alarmStartMillis = millis();
         currentScreen = SCREEN_ALARM_ON;
 
         // Send Discord notification.
@@ -376,7 +378,7 @@ void tickClock() {
         msg += "Alarm: **" + alarms[i].name + "**\n";
         msg += "**HABIBI wake up, you got stuff to do!**\n";
         msg += "Your friends are sick of you sleeping!\n";
-        msg += "||https://cdn.discordapp.com/attachments/841879601667637248/1391084208780476587/zt.gif?ex=6a6b7320&is=6a6a21a0&hm=dc0f37d35aed7dde9aeb771397226da4ef2915ee0b0db4c688689b9f66eca09d&||";
+        msg += "https://cdn.discordapp.com/attachments/841879601667637248/1391084208780476587/zt.gif?ex=6a6b7320&is=6a6a21a0&hm=dc0f37d35aed7dde9aeb771397226da4ef2915ee0b0db4c688689b9f66eca09d&";
         msg += "🕐 Time: **" + String(alarms[i].h) + ":";
         msg += (alarms[i].m < 10 ? "0" : "") + String(alarms[i].m) + "**\n";
 
@@ -519,13 +521,29 @@ void drawSetAlarm() {
   display.display();
 }
 
+String formatElapsed(unsigned long elapsedMs) {
+  unsigned long totalSeconds = elapsedMs / 1000;
+  unsigned long hours = totalSeconds / 3600;
+  unsigned long minutes = (totalSeconds % 3600) / 60;
+  unsigned long seconds = totalSeconds % 60;
+
+  String result = "";
+  if (hours < 10) result += "0";
+  result += String(hours) + ":";
+  if (minutes < 10) result += "0";
+  result += String(minutes) + ":";
+  if (seconds < 10) result += "0";
+  result += String(seconds);
+  return result;
+}
+
 void drawAlarmOn() {
   display.clearDisplay();
   display.drawBitmap(0, 0, cat_bits, 22, 16, WHITE);
   display.drawBitmap(106, 0, cat_bits, 22, 16, WHITE);
 
   display.setTextSize(2);
-  display.setCursor(15, 17);
+  display.setCursor(15, 15);
   display.println("WAKE UP!");
 
   if (ringingAlarmIdx >= 0) {
@@ -533,13 +551,12 @@ void drawAlarmOn() {
     if (name.length() > 20) name = name.substring(0, 20);
 
     display.setTextSize(1);
-    display.setCursor(64 - (name.length() * 3), 37);
+    display.setCursor(64 - (name.length() * 3), 33);
     display.print(name);
 
-    display.setCursor(42, 47);
-    printTwo(alarms[ringingAlarmIdx].h);
-    display.print(":");
-    printTwo(alarms[ringingAlarmIdx].m);
+    display.setCursor(30, 44);
+    display.print("TIME ");
+    display.print(formatElapsed(millis() - alarmStartMillis));
   }
 
   display.setCursor(5, 57);
@@ -917,10 +934,29 @@ void loop() {
   else if (currentScreen == SCREEN_ALARM_ON) {
     drawAlarmOn();
     if (!digitalRead(STOP_BTN)) {
+      unsigned long wakeTime = millis() - alarmStartMillis;
+      String elapsed = formatElapsed(wakeTime);
+
       stopMotors();
       delay(50);
       alarmRinging = false;
+
+      // Tell Discord how long the alarm was active before it was stopped.
+      String wakeMsg;
+      if (userName.length() > 0) {
+        wakeMsg = "✅ **" + userName + " has woken up!**\n";
+      } else {
+        wakeMsg = "✅ **Alarm stopped!**\n";
+      }
+
+      if (ringingAlarmIdx >= 0) {
+        wakeMsg += "Alarm: **" + alarms[ringingAlarmIdx].name + "**\n";
+      }
+      wakeMsg += "⏱️ Time to wake up: **" + elapsed + "**";
+      sendDiscord(wakeMsg);
+
       currentScreen = SCREEN_CLOCK;
+      ringingAlarmIdx = -1;
     }
 
     // motors start running
