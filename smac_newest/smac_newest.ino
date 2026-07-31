@@ -28,22 +28,21 @@ float lon = -999;
 float t_high;
 float t_low;
 float temp;
-float humidity;
+int humidity;
 String w_desc;
 
-const char* wthrServer = "https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API key}";
+const char* wthrServer = "https://api.openweathermap.org/data/2.5/weather?lat=" + String(lat, 6) +
+             "&lon=" + String(lon, 6) + "&appid=" + "api_key" + "&units=metric";
 
-const int LEFT_MOTOR_A = 25; // A-1A
-const int RIGHT_MOTOR_A = 16; // B-1A
-const int LEFT_MOTOR_B = 26; // A-1B
-const int RIGHT_MOTOR_B = 17; // B-2A
+
+const int MOTOR_A1 = 25; // A-1A
+const int MOTOR_A2 = 26; // A-1B
+const int MOTOR_B1 = 16; // B-1A
+const int MOTOR_B2 = 17; // B-2A
 const int fullSpeed = 255; // full speed at which motors can operate
-
-const float midSpeed = (0.85)*fullSpeed;   // 50% speed
-
-float operatingSpeed = midSpeed;  //present speed of motors
-float aMotorTrim  = 0.80; 
-float bMotorTrim = 1.00;
+const float operatingSpeed = (0.85)*fullSpeed;    //present speed of motors, 85% of full speed
+float aMotorTrim  = 1.00; 
+float bMotorTrim = 0.80;
 
 const int IR_SENSOR_PIN = 19;
 bool irObstacle;   // true if obstacle present else false
@@ -325,12 +324,17 @@ void syncWeather(){
       String payload = http.getString();
       JsonDocument doc;
       deserializeJson(doc, payload);
+      DeserializationError err = deserializeJson(doc, payload);
+        if (err) {
+          http.end();
+          return;
+        }
       
       temp = doc["main"]["temp"];
       t_high = doc["main"]["temp_max"];
       t_low = doc["main"]["temp_min"];
       humidity = doc["main"]["humidity"];
-      w_desc = doc["weather"]["description"];
+      w_desc = doc["weather"][0]["description"].as<String>();
     }
     http.end();
   }
@@ -885,12 +889,11 @@ void handleWebPage() {
       <div class='field' style='margin-bottom:11px'>
         <label>Latitude</label>
         <input type='text' name='lat' maxlength='32' value=')";
-  page += htmlEscape(lat);
   page += R"(' placeholder='e.g. 32'>
       </div>
       <div class='field'>
         <label>Longitude</label>
-        <input type='text' name='longitude' placeholder=')";
+        <input type='text' name='longitude' value=')";
   page += (lat != -999) || (lon != -999) ? "Saved — leave blank to keep it" : "Input coordinates";
   page += R"(' autocomplete='off'>
       </div>
@@ -898,9 +901,9 @@ void handleWebPage() {
       <button class='btn' type='submit'>Save Weather settings</button>
     </form>
     <div class='status'>)";
-  page += (lat >= -90 && lat<=90) || (lon >= 0 && lon <= 360) ? "Weather configured" : "Weather not configured";
+  page += (lat >= -90 && lat<=90) && (lon >= -180 && lon <= 180) ? "Weather configured" : "Weather not configured";
   page += R"(</div>
-    <div class='hint'>Use your coordinates to set the weather report in SMAC. Input latitude between [-90, 90] and longitude between [0, 360].</div>
+    <div class='hint'>Use your coordinates to set the weather report in SMAC. Input latitude between [-90, 90] and longitude between [-180, 180].</div>
   </div>)";
 
   page += R"(<div class='divider'></div>
@@ -983,10 +986,10 @@ void setup() {
   Serial.println("SMAC ready!");
 
   // Set all motor control pins as outputs
-  pinMode(LEFT_MOTOR_A, OUTPUT);
-  pinMode(LEFT_MOTOR_B, OUTPUT);
-  pinMode(RIGHT_MOTOR_A, OUTPUT);
-  pinMode(RIGHT_MOTOR_B, OUTPUT);
+  pinMode(MOTOR_A1, OUTPUT);
+  pinMode(MOTOR_A2, OUTPUT);
+  pinMode(MOTOR_B1, OUTPUT);
+  pinMode(MOTOR_B2, OUTPUT);
   
   // Ensure everything starts turned off
   stopMotors();
@@ -1095,41 +1098,33 @@ void loop() {
 // Function for basic forward movement in case of no significant event required (turn left, turn right or speed up)
 // Use same function for speed up but set operatingSpeed == midSpeed or fastSpeed (after testing)
 void moveForward() {
-  //Left motor
-  analogWrite(RIGHT_MOTOR_A, 0);
-  analogWrite(RIGHT_MOTOR_B, operatingSpeed*aMotorTrim);
-  //Right motor
-  analogWrite(LEFT_MOTOR_A, operatingSpeed*bMotorTrim);
-  analogWrite(LEFT_MOTOR_B, 0);
-  
+  analogWrite(MOTOR_A1, operatingSpeed*aMotorTrim);
+  analogWrite(MOTOR_A2, 0);
+  analogWrite(MOTOR_B1, operatingSpeed*bMotorTrim);
+  analogWrite(MOTOR_B2, 0); 
 }
 
 void moveBackward() {
-  //Left Motor
-  analogWrite(RIGHT_MOTOR_A, operatingSpeed*aMotorTrim);
-  analogWrite(RIGHT_MOTOR_B, 0);
-  //Right Motor
-  analogWrite(LEFT_MOTOR_A, 0);
-  analogWrite(LEFT_MOTOR_B, operatingSpeed*bMotorTrim);
-  
+  analogWrite(MOTOR_A1, 0);
+  analogWrite(MOTOR_A2, operatingSpeed*aMotorTrim);
+  analogWrite(MOTOR_B1, 0);
+  analogWrite(MOTOR_B2, operatingSpeed*bMotorTrim);
 }
 
 // Function to turn right
 void turnRight() {
-  analogWrite(RIGHT_MOTOR_A, 0);
-  analogWrite(RIGHT_MOTOR_B, operatingSpeed);
-
-  analogWrite(LEFT_MOTOR_A, 0);
-  analogWrite(LEFT_MOTOR_B, operatingSpeed);
-  
+  analogWrite(MOTOR_A1, 0);
+  analogWrite(MOTOR_A2, operatingSpeed);
+  analogWrite(MOTOR_B1, operatingSpeed);
+  analogWrite(MOTOR_B2, 0);
 }
 
 // Stop the motors
 void stopMotors() {
-  analogWrite(LEFT_MOTOR_A, 0);
-  analogWrite(RIGHT_MOTOR_A, 0);
-  analogWrite(LEFT_MOTOR_B, 0);
-  analogWrite(RIGHT_MOTOR_B, 0);
+  analogWrite(MOTOR_A1, LOW);
+  analogWrite(MOTOR_A2, LOW);
+  analogWrite(MOTOR_B1, LOW);
+  analogWrite(MOTOR_B2, LOW);
 }
 
 float readUltrasonicDistance() {
