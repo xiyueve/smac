@@ -8,11 +8,16 @@
 #include <time.h>
 #include <HTTPClient.h>
 #include <WebServer.h>
+#include <Preferences.h>
 WebServer server(80);
+Preferences preferences;
 
-const char* ssid     = "Eve";
-const char* password = "iloveesp2026";
-const char* discordWebhook = "";
+const char* ssid     = "MyOptimum df858f";
+const char* password = "24-rose-3111";
+
+// Configured from the web app and persisted in ESP32 flash.
+String discordWebhookUrl = "";
+String userName = "";
 
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset = -18000;
@@ -203,16 +208,46 @@ void alarmTask(void* param) {
 }
 
 // ────────────────────────────────
+// PERSISTENT WEB SETTINGS
+// ────────────────────────────────
+void loadWebSettings() {
+  preferences.begin("smac", false);
+  userName = preferences.getString("user", "");
+  discordWebhookUrl = preferences.getString("webhook", "");
+}
+
+void saveWebSettings() {
+  preferences.putString("user", userName);
+  preferences.putString("webhook", discordWebhookUrl);
+}
+
+bool validDiscordWebhook(const String& url) {
+  return url.startsWith("https://discord.com/api/webhooks/") ||
+         url.startsWith("https://discordapp.com/api/webhooks/");
+}
+
+String jsonEscape(String value) {
+  value.replace("\\", "\\\\");
+  value.replace("\"", "\\\"");
+  value.replace("\n", "\\n");
+  value.replace("\r", "\\r");
+  return value;
+}
+
+// ────────────────────────────────
 // DISCORD
 // ────────────────────────────────
 void sendDiscord(String message) {
   if (WiFi.status() != WL_CONNECTED) return;
+  if (discordWebhookUrl.length() == 0) {
+    Serial.println("Discord webhook not configured.");
+    return;
+  }
+
   HTTPClient http;
-  http.begin(discordWebhook);
+  http.begin(discordWebhookUrl);
   http.addHeader("Content-Type", "application/json");
-  message.replace("\"", "\\\"");
-  message.replace("\n", "\\n");
-  String body = "{\"content\":\"" + message + "\"}";
+  String body = "{\"content\":\"" + jsonEscape(message) + "\"}";
   int code = http.POST(body);
   Serial.print("Discord response: ");
   Serial.println(code);
@@ -331,12 +366,17 @@ void tickClock() {
         ringingAlarmIdx = i;
         currentScreen = SCREEN_ALARM_ON;
 
-        // send discord notification
+        // Send Discord notification.
         String msg = "⏰ **SMAC Alarm " + String(i + 1) + " going off!**\n";
-        msg += "**" + alarms[i].name + "**\n";
-        msg += "**You need to wake up, you got stuff to do!**\n";
-        msg += "Your friends are sick of you sleeping!\n"
-        msg += "https://cdn.discordapp.com/attachments/841879601667637248/1391084208780476587/zt.gif?ex=6a6b7320&is=6a6a21a0&hm=dc0f37d35aed7dde9aeb771397226da4ef2915ee0b0db4c688689b9f66eca09d&";
+        if (userName.length() > 0) {
+          msg += "🚨 **" + userName + ", wake up!**\n";
+        } else {
+          msg += "🚨 **Wake up!**\n";
+        }
+        msg += "Alarm: **" + alarms[i].name + "**\n";
+        msg += "**HABIBI wake up, you got stuff to do!**\n";
+        msg += "Your friends are sick of you sleeping!\n";
+        msg += "||https://cdn.discordapp.com/attachments/841879601667637248/1391084208780476587/zt.gif?ex=6a6b7320&is=6a6a21a0&hm=dc0f37d35aed7dde9aeb771397226da4ef2915ee0b0db4c688689b9f66eca09d&||";
         msg += "🕐 Time: **" + String(alarms[i].h) + ":";
         msg += (alarms[i].m < 10 ? "0" : "") + String(alarms[i].m) + "**\n";
 
@@ -565,8 +605,9 @@ void handleSetAlarm() {
 }
 
 // ────────────────────────────────
+// ────────────────────────────────
 // WEB SERVER
-// Escape text before putting it into HTML.
+// ────────────────────────────────
 String htmlEscape(String value) {
   value.replace("&", "&amp;");
   value.replace("<", "&lt;");
@@ -576,49 +617,75 @@ String htmlEscape(String value) {
   return value;
 }
 
-//lets the ESP32 act like a tiny website host.
-//Creates a web server that listens on port 80
-// ────────────────────────────────
-void setupWebServer() {
-  server.on("/", []() {
-    String msg = "";
+void handleWebPost() {
+  String msg = "";
 
-    // Toggle alarm on/off from the web app.
-    if (server.hasArg("action") && server.arg("action") == "toggle" && server.hasArg("slot")) {
-      int slot = server.arg("slot").toInt();
-      if (slot >= 0 && slot < MAX_ALARMS) {
-        alarms[slot].active = !alarms[slot].active;
-        msg = alarms[slot].name + String(alarms[slot].active ? " turned ON" : " turned OFF");
+  if (server.hasArg("action") && server.arg("action") == "settings") {
+    String newName = server.hasArg("userName") ? server.arg("userName") : "";
+    String newWebhook = server.hasArg("webhook") ? server.arg("webhook") : "";
+    bool clearWebhook = server.hasArg("clearWebhook") && server.arg("clearWebhook") == "1";
+
+    newName.trim();
+    if (newName.length() > 32) newName = newName.substring(0, 32);
+    userName = newName;
+
+    if (clearWebhook) {
+      discordWebhookUrl = "";
+    } else if (newWebhook.length() > 0) {
+      newWebhook.trim();
+      if (validDiscordWebhook(newWebhook)) {
+        discordWebhookUrl = newWebhook;
+      } else {
+        msg = "Webhook was not saved: enter a Discord webhook URL.";
       }
     }
 
-    // Save an alarm from the web app.
-    if (server.hasArg("action") && server.arg("action") == "save" &&
-        server.hasArg("h") && server.hasArg("m") &&
-        server.hasArg("slot") && server.hasArg("name")) {
-
-      int slot = server.arg("slot").toInt();
-      int h = server.arg("h").toInt();
-      int m = server.arg("m").toInt();
-      String name = server.arg("name");
-
-      if (slot >= 0 && slot < MAX_ALARMS &&
-          h >= 0 && h <= 23 && m >= 0 && m <= 59) {
-
-        name.trim();
-        if (name.length() == 0) name = "Alarm " + String(slot + 1);
-        if (name.length() > 32) name = name.substring(0, 32);
-
-        alarms[slot].h = h;
-        alarms[slot].m = m;
-        alarms[slot].name = name;
-        alarms[slot].active = true;
-
-        msg = alarms[slot].name + " saved and turned ON";
-      }
+    if (msg == "") {
+      saveWebSettings();
+      msg = "Discord settings saved";
     }
+  }
 
-    String page = R"(
+  String page = "<html><head><meta http-equiv='refresh' content='1; url=/'></head><body>";
+  page += htmlEscape(msg);
+  page += "</body></html>";
+  server.send(200, "text/html", page);
+}
+
+void handleWebPage() {
+  String msg = "";
+
+  if (server.hasArg("action") && server.arg("action") == "toggle" && server.hasArg("slot")) {
+    int slot = server.arg("slot").toInt();
+    if (slot >= 0 && slot < MAX_ALARMS) {
+      alarms[slot].active = !alarms[slot].active;
+      msg = alarms[slot].name + String(alarms[slot].active ? " turned ON" : " turned OFF");
+    }
+  }
+
+  if (server.hasArg("action") && server.arg("action") == "save" &&
+      server.hasArg("h") && server.hasArg("m") &&
+      server.hasArg("slot") && server.hasArg("name")) {
+
+    int slot = server.arg("slot").toInt();
+    int h = server.arg("h").toInt();
+    int m = server.arg("m").toInt();
+    String name = server.arg("name");
+
+    if (slot >= 0 && slot < MAX_ALARMS && h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      name.trim();
+      if (name.length() == 0) name = "Alarm " + String(slot + 1);
+      if (name.length() > 32) name = name.substring(0, 32);
+
+      alarms[slot].h = h;
+      alarms[slot].m = m;
+      alarms[slot].name = name;
+      alarms[slot].active = true;
+      msg = alarms[slot].name + " saved and turned ON";
+    }
+  }
+
+  String page = R"(
 <!DOCTYPE html>
 <html>
 <head>
@@ -627,94 +694,38 @@ void setupWebServer() {
 <title>SMAC</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #f5f0eb;
-    color: #2c2420;
-    min-height: 100vh;
-    padding: 24px 16px;
-  }
-  .wrap { max-width: 390px; margin: 0 auto; }
-  .header { text-align: center; margin-bottom: 24px; }
-  .cat-svg { display: block; margin: 0 auto 12px; }
-  .app-name { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #b08878; margin-bottom: 2px; }
-  .time-label { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #b08878; margin-bottom: 6px; }
-  .time-display { font-size: 52px; font-weight: 300; letter-spacing: -1px; color: #1a1008; line-height: 1; margin-bottom: 4px; }
-  .divider { height: 1px; background: #e0d4c8; margin: 20px 0; }
-  .section-title { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #b08878; margin-bottom: 12px; }
-  .alarm-pills { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
-  .alarm-pill {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #ede5dc;
-    border-radius: 10px;
-    padding: 11px 12px 11px 14px;
-    gap: 10px;
-  }
-  .alarm-pill.active { background: #e8ddd0; }
-  .alarm-info { min-width: 0; flex: 1; }
-  .alarm-pill .atime { font-size: 17px; font-weight: 500; color: #2c2420; }
-  .alarm-num { font-size: 10px; color: #b08878; margin-bottom: 1px; text-transform: uppercase; letter-spacing: 0.06em; }
-  .alarm-name { font-size: 13px; color: #6c5448; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-  .badge {
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: 5px 9px;
-    border-radius: 20px;
-    background: #d8cdc4;
-    color: #8a7060;
-    border: none;
-    cursor: pointer;
-    flex: 0 0 auto;
-  }
-  .badge.on { background: #c8a882; color: #fff; }
-  .edit-box { background: #ede5dc; border-radius: 12px; padding: 14px; }
-  .form-row { display: flex; gap: 9px; margin-bottom: 11px; align-items: flex-end; }
-  .field { flex: 1; min-width: 0; }
-  .field.wide { flex: 2; }
-  .field label {
-    display: block;
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #b08878;
-    margin-bottom: 5px;
-  }
-  .field select, .field input {
-    width: 100%;
-    padding: 10px 11px;
-    border: 1.5px solid #d8cdc4;
-    border-radius: 8px;
-    background: #faf6f2;
-    color: #2c2420;
-    font-size: 15px;
-    font-family: inherit;
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-  .field select:focus, .field input:focus { border-color: #c8a882; background: #fff; }
-  .btn {
-    width: 100%;
-    padding: 12px;
-    background: #9a6a4a;
-    color: #faf6f2;
-    border: none;
-    border-radius: 9px;
-    font-size: 14px;
-    font-family: inherit;
-    letter-spacing: 0.05em;
-    cursor: pointer;
-  }
-  .btn:active { background: #7a4a2a; }
-  .msg { margin-top: 12px; padding: 10px 12px; background: #e8d8c8; color: #6a4030; border-radius: 9px; font-size: 13px; text-align: center; }
-  .hint { font-size: 10px; color: #9a8276; margin-top: 8px; text-align: center; }
-  @media (max-width: 360px) {
-    .form-row { flex-wrap: wrap; }
-    .field.wide { flex-basis: 100%; }
-  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#f5f0eb; color:#2c2420; min-height:100vh; padding:24px 16px; }
+  .wrap { max-width:390px; margin:0 auto; }
+  .header { text-align:center; margin-bottom:24px; }
+  .cat-svg { display:block; margin:0 auto 12px; }
+  .app-name { font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:#b08878; }
+  .time-label { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#b08878; margin-bottom:6px; }
+  .time-display { font-size:52px; font-weight:300; color:#1a1008; line-height:1; }
+  .divider { height:1px; background:#e0d4c8; margin:20px 0; }
+  .section-title { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#b08878; margin-bottom:12px; }
+  .alarm-pills { display:flex; flex-direction:column; gap:8px; }
+  .alarm-pill { display:flex; align-items:center; justify-content:space-between; background:#ede5dc; border-radius:10px; padding:11px 12px 11px 14px; gap:10px; }
+  .alarm-pill.active { background:#e8ddd0; }
+  .alarm-info { min-width:0; flex:1; }
+  .atime { font-size:17px; font-weight:500; }
+  .alarm-num { font-size:10px; color:#b08878; text-transform:uppercase; letter-spacing:.06em; }
+  .alarm-name { font-size:13px; color:#6c5448; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+  .badge { font-size:10px; letter-spacing:.08em; text-transform:uppercase; padding:5px 9px; border-radius:20px; background:#d8cdc4; color:#8a7060; border:none; cursor:pointer; }
+  .badge.on { background:#c8a882; color:#fff; }
+  .box { background:#ede5dc; border-radius:12px; padding:14px; }
+  .form-row { display:flex; gap:9px; margin-bottom:11px; align-items:flex-end; }
+  .field { flex:1; min-width:0; }
+  .field.wide { flex:2; }
+  .field label { display:block; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#b08878; margin-bottom:5px; }
+  .field input, .field select { width:100%; padding:10px 11px; border:1.5px solid #d8cdc4; border-radius:8px; background:#faf6f2; color:#2c2420; font-size:15px; font-family:inherit; outline:none; }
+  .btn { width:100%; padding:12px; background:#9a6a4a; color:#faf6f2; border:none; border-radius:9px; font-size:14px; font-family:inherit; cursor:pointer; }
+  .btn:active { background:#7a4a2a; }
+  .status { margin-top:8px; padding:9px 10px; border-radius:8px; background:#f0e7df; color:#6c5448; font-size:11px; text-align:center; }
+  .hint { font-size:10px; color:#9a8276; margin-top:8px; text-align:center; line-height:1.4; }
+  .checkbox { display:flex; align-items:center; gap:7px; margin:9px 0 3px; color:#6c5448; font-size:11px; }
+  .checkbox input { width:auto; }
+  .msg { margin-top:12px; padding:10px 12px; background:#e8d8c8; color:#6a4030; border-radius:9px; font-size:13px; text-align:center; }
+  @media (max-width:360px) { .form-row { flex-wrap:wrap; } .field.wide { flex-basis:100%; } }
 </style>
 </head>
 <body>
@@ -742,83 +753,83 @@ void setupWebServer() {
 
   <div class='time-label'>Current time</div>
   <div class='time-display'>)";
-
-    page += String(clockH) + ":" + (clockM < 10 ? "0" : "") + String(clockM);
-
-    page += R"(</div>
+  page += String(clockH) + ":" + (clockM < 10 ? "0" : "") + String(clockM);
+  page += R"(</div>
 
   <div class='divider'></div>
   <div class='section-title'>Alarms</div>
   <div class='alarm-pills'>)";
 
-    for (int i = 0; i < MAX_ALARMS; i++) {
-      page += "<div class='alarm-pill" + String(alarms[i].active ? " active" : "") + "'>";
-      page += "<div class='alarm-info'>";
-      page += "<div class='alarm-num'>Alarm " + String(i + 1) + "</div>";
-      page += "<div class='atime'>" + String(alarms[i].h) + ":" +
-              (alarms[i].m < 10 ? "0" : "") + String(alarms[i].m) + "</div>";
-      page += "<div class='alarm-name'>" + htmlEscape(alarms[i].name) + "</div>";
-      page += "</div>";
+  for (int i = 0; i < MAX_ALARMS; i++) {
+    page += "<div class='alarm-pill" + String(alarms[i].active ? " active" : "") + "'>";
+    page += "<div class='alarm-info'><div class='alarm-num'>Alarm " + String(i + 1) + "</div>";
+    page += "<div class='atime'>" + String(alarms[i].h) + ":" + (alarms[i].m < 10 ? "0" : "") + String(alarms[i].m) + "</div>";
+    page += "<div class='alarm-name'>" + htmlEscape(alarms[i].name) + "</div></div>";
+    page += "<form method='GET' style='margin:0'><input type='hidden' name='action' value='toggle'><input type='hidden' name='slot' value='" + String(i) + "'>";
+    page += "<button class='badge" + String(alarms[i].active ? " on" : "") + "' type='submit'>" + String(alarms[i].active ? "ON" : "OFF") + "</button></form></div>";
+  }
 
-      page += "<form method='GET' style='margin:0'>";
-      page += "<input type='hidden' name='action' value='toggle'>";
-      page += "<input type='hidden' name='slot' value='" + String(i) + "'>";
-      page += "<button class='badge" + String(alarms[i].active ? " on" : "") +
-              "' type='submit'>" + String(alarms[i].active ? "ON" : "OFF") + "</button>";
-      page += "</form>";
-      page += "</div>";
-    }
+  page += R"(</div>
 
-    page += R"(</div>
-
-    <div class='divider'></div>
+  <div class='divider'></div>
   <div class='section-title'>Edit alarm</div>
-  <div class='edit-box'>
+  <div class='box'>
     <form method='GET'>
       <input type='hidden' name='action' value='save'>
       <div class='form-row'>
-        <div class='field wide'>
-          <label>Name</label>
-          <input type='text' name='name' maxlength='32' placeholder='e.g. School'>
-        </div>
-        <div class='field'>
-          <label>Slot</label>
-          <select name='slot'>)";
+        <div class='field wide'><label>Name</label><input type='text' name='name' maxlength='32' placeholder='e.g. WAKE UP!!'></div>
+        <div class='field'><label>Slot</label><select name='slot'>)";
 
-    for (int i = 0; i < MAX_ALARMS; i++) {
-      page += "<option value='" + String(i) + "'>Alarm " + String(i + 1) + "</option>";
-    }
+  for (int i = 0; i < MAX_ALARMS; i++) page += "<option value='" + String(i) + "'>Alarm " + String(i + 1) + "</option>";
 
-    page += R"(</select>
-        </div>
+  page += R"(</select></div>
       </div>
-
       <div class='form-row'>
-        <div class='field'>
-          <label>Hour</label>
-          <input type='number' name='h' min='0' max='23' placeholder='7'>
-        </div>
-        <div class='field'>
-          <label>Minute</label>
-          <input type='number' name='m' min='0' max='59' placeholder='00'>
-        </div>
+        <div class='field'><label>Hour</label><input type='number' name='h' min='0' max='23' placeholder='7'></div>
+        <div class='field'><label>Minute</label><input type='number' name='m' min='0' max='59' placeholder='00'></div>
       </div>
-
       <button class='btn' type='submit'>Save alarm</button>
     </form>
     <div class='hint'>Saving an alarm turns it ON. Use the ON/OFF button above to disable it.</div>
+  </div>
+
+  <div class='divider'></div>
+  <div class='section-title'>Discord settings</div>
+  <div class='box'>
+    <form method='POST'>
+      <input type='hidden' name='action' value='settings'>
+      <div class='field' style='margin-bottom:11px'>
+        <label>Your name</label>
+        <input type='text' name='userName' maxlength='32' value=')";
+  page += htmlEscape(userName);
+  page += R"(' placeholder='e.g. Eve Lin'>
+      </div>
+      <div class='field'>
+        <label>Discord webhook URL</label>
+        <input type='password' name='webhook' placeholder=')";
+  page += discordWebhookUrl.length() > 0 ? "Saved — leave blank to keep it" : "Paste your Discord webhook URL";
+  page += R"(' autocomplete='off'>
+      </div>
+      <label class='checkbox'><input type='checkbox' name='clearWebhook' value='1'> Clear the saved webhook</label>
+      <button class='btn' type='submit'>Save Discord settings</button>
+    </form>
+    <div class='status'>)";
+  page += discordWebhookUrl.length() > 0 ? "Webhook configured" : "Webhook not configured";
+  page += R"(</div>
+    <div class='hint'>The name is used in the Discord callout. The webhook is saved in ESP32 flash and is not displayed back on the page.</div>
   </div>)";
 
-    if (msg != "") page += "<div class='msg'>" + htmlEscape(msg) + "</div>";
-
-    page += R"(
+  if (msg != "") page += "<div class='msg'>" + htmlEscape(msg) + "</div>";
+  page += R"(
 </div>
 </body>
 </html>)";
+  server.send(200, "text/html", page);
+}
 
-    server.send(200, "text/html", page);
-  });
-
+void setupWebServer() {
+  server.on("/", HTTP_GET, handleWebPage);
+  server.on("/", HTTP_POST, handleWebPost);
   server.begin();
   Serial.print("Web server at: http://");
   Serial.println(WiFi.localIP());
@@ -852,6 +863,7 @@ void setup() {
 
   connectWifi();
   syncTime();
+  loadWebSettings();
   setupWebServer();
 
   setupI2S();
@@ -915,9 +927,9 @@ void loop() {
     //detecting if object present at back (IR) or front (ultrasonic)
 
     // ultrasonic code, deprecated 
-    #if zero
+    #if 0
     frontDist = readUltrasonicDistance();
-    #end if 
+    #endif 
 
     // IR code
     irObstacle = (digitalRead(IR_SENSOR_PIN) == LOW); // LOW means object detected
