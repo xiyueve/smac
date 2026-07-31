@@ -23,8 +23,8 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset = -18000;
 const int   dstOffset = 3600;
 
-int lat = -1;
-int lon = -1;
+int lat = -999;
+int lon = -999;
 float t_high;
 float t_low;
 float temp;
@@ -891,14 +891,14 @@ void handleWebPage() {
       <div class='field'>
         <label>Longitude</label>
         <input type='text' name='longitude' placeholder=')";
-  page += (lat != -1) || (lon != -1) ? "Saved — leave blank to keep it" : "Input coordinates";
+  page += (lat != -999) || (lon != -999) ? "Saved — leave blank to keep it" : "Input coordinates";
   page += R"(' autocomplete='off'>
       </div>
       <label class='checkbox'><input type='checkbox' name='clearCoord' value='1'> Clear the saved coordinates</label>
       <button class='btn' type='submit'>Save Weather settings</button>
     </form>
     <div class='status'>)";
-  page += (lat != -1) || (lon != -1) ? "Weather configured" : "Weather not configured";
+  page += (lat != -999) || (lon != -999) ? "Weather configured" : "Weather not configured";
   page += R"(</div>
     <div class='hint'>Use your coordinates to set the weather report in SMAC.</div>
   </div>)";
