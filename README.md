@@ -1,4 +1,4 @@
-### SMAC Introduction
+SMAC Introduction
 ---
 The **Smart Moving Alarm Clock (SMAC)** is a custom alarm clock built for the IEEE SSCS Arduino Contest in summer 2026. 
 
@@ -16,10 +16,11 @@ Optional Web App: Control the alarms, weather forecast location (longitude and l
 
 To turn off the alarm, smack the joystick on top of SMAC. 
 
-We hope you wake up early tomorrow!
+# We hope you wake up early tomorrow!
 ---
 
 **Contributors**: Run Chen (audio circuit, web app), Ritika Lakare (obstacle avoidance, assembly), Eve Lin (CAD, web app, integration)
+
 Representing the University of Wisconsin-Madison (United States) in the post-secondary division. 
 
 Run is so hungry right now. Eve wants to sleep. Ritika is just present. 
@@ -37,3 +38,5 @@ __Onshape CAD Link__: https://cad.onshape.com/documents/705f07fd725f13b6975b72cf
 "Wow, this SMAC alarm clock is so easy to use. It’s super reliable and fun to have around and makes waking up in the morning less of a nightmare! Would 100% recommend, 10/10, everyone should get it NOW." - Oleksandr K.
 
 "This alarm is so wonderful. It has woken me up on time every morning. It makes sure that I am up and ready for the day and it prevents me from going back to sleep. This alarm has allowed me to be so much more productive. I've become a much better person overall and I can owe all success that I've had in my life to this wonderful alarm." - Sasha M. 
+
+"The SMAC alarm has fixed my habit of being late to hangouts. Aside from just helping you wake up on time, it’s safe to say that this will definitely improve your social relationships. 1000% recommend!!!" - Ridhwan K. 
