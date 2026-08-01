@@ -14,9 +14,10 @@
 WebServer server(80);
 Preferences preferences;
 
-const char* ssid     = "Ritu_Pixel";
-const char* password = "Ritzphoenix07";
+const char* ssid     = "WIFI Network";
+const char* password = "Password";
 
+// Configured from the web app and persisted in ESP32 flash.
 String discordWebhookUrl = "";
 String userName = "";
 
@@ -24,37 +25,32 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset = -18000;
 const int   dstOffset = 3600;
 
-float lat = -999;
-float lon = -999;
+float lat = 43;
+float lon = -89;
 float t_high;
 float t_low;
 float temp;
-float humidity;
-String w_desc = "N/A";
-String openWeatherApiKey = "YOUR_API_KEY_HERE";
+String w_desc;
 
-// ── Motor pins (fixed — no longer conflicts with I2S) ──
-const int LEFT_MOTOR_A  = 32; // A-1A
-const int LEFT_MOTOR_B  = 33; // A-1B
-const int RIGHT_MOTOR_A = 4;  // B-1A
-const int RIGHT_MOTOR_B = 2;  // B-2A
+const char* openWeatherApiKey = "api_key";
 
-const float fullSpeed  = 255;
-const float midSpeed   = 0.85 * fullSpeed;
-float operatingSpeed   = midSpeed;
-float aMotorTrim       = 0.80;
-float bMotorTrim       = 1.00;
+String wthr = "https://api.openweathermap.org/data/2.5/weather?lat=" + String(lat) +
+              "&lon=" + String(lon) + "&appid=" + String(openWeatherApiKey) + "&units=metric";
+
+const int MOTOR_A1 = 25; // A-1A
+const int MOTOR_A2 = 26; // A-1B
+const int MOTOR_B1 = 16; // B-1A
+const int MOTOR_B2 = 17; // B-2A
+const int fullSpeed = 255; // full speed at which motors can operate
+const float operatingSpeed = (0.85)*fullSpeed;    //present speed of motors, 85% of full speed
+float aMotorTrim  = 1.00;
+float bMotorTrim = 0.80;
 
 const int IR_SENSOR_PIN = 19;
-bool irObstacle = false;
+bool irObstacle;   // true if obstacle present else false
+unsigned long lastActionTime = 0; // tracks the last time any movement command what executed
 
-const int TRIG_PIN = 5;
-const int ECHO_PIN = 18;
-float frontDist;
-
-unsigned long lastActionTime = 0;
-
-#define SCREEN_WIDTH  128
+#define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
@@ -74,52 +70,62 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 #define BEEP_OFF_MS  200
 #define VOLUME       1
 
-#define STOP_BTN 15
+#define STOP_BTN JOY_BTN
 
-#define SCREEN_CLOCK      0
-#define SCREEN_MENU       1
-#define SCREEN_ALARM_LIST 2
-#define SCREEN_SET_ALARM  3
-#define SCREEN_ALARM_ON   4
-#define SCREEN_WEATHER    5  
+// ── Screens ──
+#define SCREEN_CLOCK        0
+#define SCREEN_MENU         1
+#define SCREEN_ALARM_LIST   2  // shows all alarms
+#define SCREEN_SET_ALARM    3  // edit one alarm
+#define SCREEN_ALARM_ON     4
+#define SCREEN_WEATHER      5
 
 int currentScreen = SCREEN_CLOCK;
 
+// ── Menu ──
 int menuIndex = 0;
 const int MENU_ITEMS = 3;
 String menuOptions[] = {"Clock", "Alarms", "Weather"};
 
+// ── Time ──
 int clockH = 0, clockM = 0, clockS = 0;
 
-#define MAX_ALARMS 5
+// ── Multiple Alarms ──
+#define MAX_ALARMS 5  // max number of alarms
 
 struct Alarm {
   int h;
   int m;
-  bool active;
+  bool active;  // is this alarm enabled
   String name;
 };
 
 Alarm alarms[MAX_ALARMS] = {
-  {7,  0, false, "Alarm 1"},
-  {8,  0, false, "Alarm 2"},
-  {9,  0, false, "Alarm 3"},
+  {7, 0, false, "Alarm 1"},
+  {8, 0, false, "Alarm 2"},
+  {9, 0, false, "Alarm 3"},
   {10, 0, false, "Alarm 4"},
   {11, 0, false, "Alarm 5"}
 };
 
-int alarmListIndex  = 0;
-int editingAlarm    = 0;
-int editField       = 0;
-bool alarmRinging   = false;
-int ringingAlarmIdx = -1;
-unsigned long alarmStartMillis = 0;
+int alarmListIndex = 0;  // which alarm is selected in list
+int editingAlarm = 0;    // which alarm is being edited
+int editField = 0;       // 0 = hours, 1 = minutes
+bool alarmRinging = false;
+int ringingAlarmIdx = -1; // which alarm triggered
+unsigned long alarmStartMillis = 0; // when the current alarm started ringing
 
-unsigned long lastJoyMove  = 0;
-#define JOY_DEBOUNCE 200
+const int TRIG_PIN = 5;
+const int ECHO_PIN = 18;
+float frontDist;   // distance of object from front
+
+// ── Debounce ──
+unsigned long lastJoyMove = 0;
+#define JOY_DEBOUNCE 200 //in miliseconds
 unsigned long lastBtnPress = 0;
 #define BTN_DEBOUNCE 300
 
+// ── Cat image ──
 static const unsigned char PROGMEM cat_bits[] = {
   0x02,0x02,0x00,0x05,0x05,0x00,0x08,0xf8,0x80,0x08,0xa8,0x80,
   0x10,0x88,0x40,0x10,0x00,0x40,0x20,0x00,0x20,0x23,0x06,0x20,
@@ -127,50 +133,8 @@ static const unsigned char PROGMEM cat_bits[] = {
   0x21,0x24,0x20,0x10,0xd8,0x40,0x0c,0x01,0x80,0x03,0xfe,0x00
 };
 
-// ────────────────────────────────
-// MOTOR FUNCTIONS (moved above setup)
-// ────────────────────────────────
-void stopMotors() {
-  analogWrite(LEFT_MOTOR_A,  0);
-  analogWrite(LEFT_MOTOR_B,  0);
-  analogWrite(RIGHT_MOTOR_A, 0);
-  analogWrite(RIGHT_MOTOR_B, 0);
-}
-
-void moveForward() {
-  analogWrite(RIGHT_MOTOR_A, 0);
-  analogWrite(RIGHT_MOTOR_B, (int)(operatingSpeed * aMotorTrim));
-  analogWrite(LEFT_MOTOR_A,  (int)(operatingSpeed * bMotorTrim));
-  analogWrite(LEFT_MOTOR_B,  0);
-}
-
-void moveBackward() {
-  analogWrite(RIGHT_MOTOR_A, (int)(operatingSpeed * aMotorTrim));
-  analogWrite(RIGHT_MOTOR_B, 0);
-  analogWrite(LEFT_MOTOR_A,  0);
-  analogWrite(LEFT_MOTOR_B,  (int)(operatingSpeed * bMotorTrim));
-}
-
-void turnRight() {
-  analogWrite(RIGHT_MOTOR_A, 0);
-  analogWrite(RIGHT_MOTOR_B, (int)operatingSpeed);
-  analogWrite(LEFT_MOTOR_A,  0);
-  analogWrite(LEFT_MOTOR_B,  (int)operatingSpeed);
-}
-
-float readUltrasonicDistance() {
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
-  long duration = pulseIn(ECHO_PIN, HIGH);
-  return (duration * 0.034) / 2.0;
-}
-
-// ────────────────────────────────
 // ADC
-// ────────────────────────────────
+
 void setupADC() {
   adc1_config_width(ADC_WIDTH_BIT_12);
   adc1_config_channel_atten(ADC1_CHANNEL_4, ADC_ATTEN_DB_11);
@@ -180,9 +144,49 @@ void setupADC() {
 int readJoyX() { return adc1_get_raw(JOY_X); }
 int readJoyY() { return adc1_get_raw(JOY_Y); }
 
-// ────────────────────────────────
+// ================= motor code
+
+void moveForward() {
+  analogWrite(MOTOR_A1, (int)(operatingSpeed*aMotorTrim));
+  analogWrite(MOTOR_A2, 0);
+  analogWrite(MOTOR_B1, (int)(operatingSpeed*bMotorTrim));
+  analogWrite(MOTOR_B2, 0);
+}
+
+void moveBackward() {
+  analogWrite(MOTOR_A1, 0);
+  analogWrite(MOTOR_A2, (int)(operatingSpeed*aMotorTrim));
+  analogWrite(MOTOR_B1, 0);
+  analogWrite(MOTOR_B2, (int)(operatingSpeed*bMotorTrim));
+}
+
+void turnRight() {
+  analogWrite(MOTOR_A1, 0);
+  analogWrite(MOTOR_A2, (int)(operatingSpeed));
+  analogWrite(MOTOR_B1, (int)(operatingSpeed));
+  analogWrite(MOTOR_B2, 0);
+}
+
+void stopMotors() {
+  analogWrite(MOTOR_A1, 0);
+  analogWrite(MOTOR_A2, 0);
+  analogWrite(MOTOR_B1, 0);
+  analogWrite(MOTOR_B2, 0);
+}
+
+float readUltrasonicDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duration = pulseIn(ECHO_PIN, HIGH);
+  return (duration * 0.034) / 2.0;
+}
+
 // I2S AUDIO
-// ────────────────────────────────
+
 void setupI2S() {
   i2s_config_t i2s_config = {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
@@ -221,12 +225,12 @@ void playBeep(int freq, int durationMs) {
     buffer[bufIdx++] = val;
     buffer[bufIdx++] = val;
     if (bufIdx >= 64) {
-      i2s_write(I2S_NUM_0, buffer, sizeof(buffer), &bytesWritten, portMAX_DELAY);
+      i2s_write(I2S_NUM_0, buffer, sizeof(buffer), &bytesWritten, portTICK_PERIOD_MS);
       bufIdx = 0;
     }
   }
   if (bufIdx > 0) {
-    i2s_write(I2S_NUM_0, buffer, bufIdx * sizeof(int16_t), &bytesWritten, portMAX_DELAY);
+    i2s_write(I2S_NUM_0, buffer, bufIdx * sizeof(int16_t), &bytesWritten, portTICK_PERIOD_MS);
   }
 }
 
@@ -236,7 +240,7 @@ void playSilence(int durationMs) {
   size_t bytesWritten;
   int sent = 0;
   while (sent < samples * 2) {
-    i2s_write(I2S_NUM_0, buffer, sizeof(buffer), &bytesWritten, portMAX_DELAY);
+    i2s_write(I2S_NUM_0, buffer, sizeof(buffer), &bytesWritten, portTICK_PERIOD_MS);
     sent += 64;
   }
 }
@@ -257,23 +261,24 @@ void alarmTask(void* param) {
 }
 
 // ────────────────────────────────
-// PERSISTENT SETTINGS
+// PERSISTENT WEB SETTINGS
 // ────────────────────────────────
 void loadWebSettings() {
   preferences.begin("smac", false);
-  userName         = preferences.getString("user", "");
-  discordWebhookUrl = preferences.getString("webhook", "");
-  lat = preferences.getFloat("lat", -999);
-  lon = preferences.getFloat("lon", -999);
-  openWeatherApiKey = preferences.getString("apikey", "");
+  userName = preferences.getString("user", userName);
+  discordWebhookUrl = preferences.getString("webhook", discordWebhookUrl);
+  lat = preferences.getFloat("lat", lat);
+  lon = preferences.getFloat("lon", lon);
+
+  wthr = "https://api.openweathermap.org/data/2.5/weather?lat=" + String(lat) +
+         "&lon=" + String(lon) + "&appid=" + String(openWeatherApiKey) + "&units=metric";
 }
 
 void saveWebSettings() {
-  preferences.putString("user",    userName);
+  preferences.putString("user", userName);
   preferences.putString("webhook", discordWebhookUrl);
-  preferences.putFloat("lat",      lat);
-  preferences.putFloat("lon",      lon);
-  preferences.putString("apikey",  openWeatherApiKey);
+  preferences.putFloat("lat", lat);
+  preferences.putFloat("lon", lon);
 }
 
 bool validDiscordWebhook(const String& url) {
@@ -289,15 +294,6 @@ String jsonEscape(String value) {
   return value;
 }
 
-String htmlEscape(String value) {
-  value.replace("&", "&amp;");
-  value.replace("<", "&lt;");
-  value.replace(">", "&gt;");
-  value.replace("\"", "&quot;");
-  value.replace("'", "&#39;");
-  return value;
-}
-
 // ────────────────────────────────
 // DISCORD
 // ────────────────────────────────
@@ -307,6 +303,7 @@ void sendDiscord(String message) {
     Serial.println("Discord webhook not configured.");
     return;
   }
+
   HTTPClient http;
   http.begin(discordWebhookUrl);
   http.addHeader("Content-Type", "application/json");
@@ -317,9 +314,8 @@ void sendDiscord(String message) {
   http.end();
 }
 
-// ────────────────────────────────
 // WIFI + NTP
-// ────────────────────────────────
+
 void drawWifiScreen(int dots) {
   display.clearDisplay();
   display.setTextSize(1);
@@ -339,18 +335,10 @@ void connectWifi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   int dots = 0;
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+  while (WiFi.status() != WL_CONNECTED) {
     drawWifiScreen(dots % 4);
     dots++;
-    attempts++;
     delay(500);
-  }
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("WiFi connected! IP: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println("WiFi failed!");
   }
 }
 
@@ -375,40 +363,32 @@ void syncTime() {
   }
 }
 
-// fixed — now builds URL dynamically and parses weather array correctly
 void syncWeather() {
   if (WiFi.status() != WL_CONNECTED) return;
-  if (lat == -999 || lon == -999 || openWeatherApiKey.length() == 0) {
-    Serial.println("Weather not configured.");
-    return;
-  }
-
-  String url = "https://api.openweathermap.org/data/2.5/weather?lat=";
-  url += String(lat, 4);
-  url += "&lon=" + String(lon, 4);
-  url += "&appid=" + openWeatherApiKey;
-  url += "&units=metric";
 
   HTTPClient http;
-  http.begin(url);
-  int httpCode = http.GET();
+  http.begin(wthr);
+  int httpResponseCode = http.GET();
 
-  if (httpCode > 0) {
+  if (httpResponseCode > 0) {
     String payload = http.getString();
     JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, payload);
-    if (!err) {
-      temp      = doc["main"]["temp"].as<float>();
-      t_high    = doc["main"]["temp_max"].as<float>();
-      t_low     = doc["main"]["temp_min"].as<float>();
-      humidity  = doc["main"]["humidity"].as<float>();
-      w_desc    = doc["weather"][0]["description"].as<String>(); // fixed array access
-      Serial.println("Weather synced: " + w_desc);
-    } else {
-      Serial.println("Weather JSON error: " + String(err.c_str()));
+    DeserializationError error = deserializeJson(doc, payload);
+
+    if (error) {
+      Serial.print("deserializeJson() failed: ");
+      Serial.println(error.f_str());
+      http.end();
+      return;
     }
+
+    temp   = doc["main"]["temp"];
+    t_high = doc["main"]["temp_max"];
+    t_low  = doc["main"]["temp_min"];
+    w_desc = String((const char*)doc["weather"][0]["description"]);
   } else {
-    Serial.println("Weather HTTP error: " + String(httpCode));
+    Serial.print("Weather HTTP error: ");
+    Serial.println(httpResponseCode);
   }
   http.end();
 }
@@ -423,13 +403,11 @@ void checkResync() {
       clockM = timeinfo.tm_min;
       clockS = timeinfo.tm_sec;
     }
-    syncWeather(); // also resync weather every hour
   }
 }
 
-// ────────────────────────────────
 // HELPERS
-// ────────────────────────────────
+
 void printTwo(int val) {
   if (val < 10) display.print("0");
   display.print(val);
@@ -472,10 +450,10 @@ void tickClock() {
           clockH == alarms[i].h &&
           clockM == alarms[i].m &&
           clockS == 0) {
-        alarmRinging    = true;
+        alarmRinging = true;
         ringingAlarmIdx = i;
         alarmStartMillis = millis();
-        currentScreen   = SCREEN_ALARM_ON;
+        currentScreen = SCREEN_ALARM_ON;
 
         String msg = "⏰ **SMAC Alarm " + String(i + 1) + " going off!**\n";
         if (userName.length() > 0) {
@@ -487,7 +465,7 @@ void tickClock() {
         msg += "Alarm: **" + alarms[i].name + "**\n";
         msg += "**HABIBI wake up, you got stuff to do!**\n";
         msg += "Your friends are sick of you sleeping!\n";
-        msg += "https://cdn.discordapp.com/attachments/841879601667637248/1391084208780476587/zt.gif?ex=6a6b7320&is=6a6a21a0&hm=dc0f37d35aed7dde9aeb771397226da4ef2915ee0b0db4c688689b9f66eca09d&\n";
+        msg += "https://cdn.discordapp.com/attachments/841879601667637248/1391084208780476587/zt.gif?ex=6a6b7320&is=6a6a21a0&hm=dc0f37d35aed7dde9aeb771397226da4ef2915ee0b0db4c688689b9f66eca09d&";
         msg += "🕐 Time: **" + String(alarms[i].h) + ":";
         msg += (alarms[i].m < 10 ? "0" : "") + String(alarms[i].m) + "**\n";
 
@@ -508,9 +486,8 @@ void tickClock() {
   }
 }
 
-// ────────────────────────────────
 // SCREENS
-// ────────────────────────────────
+
 void drawClock() {
   display.clearDisplay();
   display.drawBitmap(0, 0, cat_bits, 22, 16, WHITE);
@@ -561,47 +538,25 @@ void drawMenu() {
   display.display();
 }
 
-// fixed — tightened layout so nothing overlaps
 void drawWeather() {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(WHITE);
-  display.setCursor(30, 0);
+  display.setCursor(40, 0);
   display.println("WEATHER");
   display.drawLine(0, 10, 128, 10, WHITE);
-
-  if (lat == -999 || lon == -999) {
-    display.setCursor(0, 20);
-    display.println("Not configured.");
-    display.setCursor(0, 32);
-    display.println("Set coords on");
-    display.setCursor(0, 42);
-    display.println("the web app.");
-  } else {
-    display.setCursor(0, 14);
-    display.print("Desc: ");
-    display.println(w_desc.substring(0, 14));
-
-    display.setCursor(0, 24);
-    display.print("Temp: ");
-    display.print(temp, 1);
-    display.println("C");
-
-    display.setCursor(0, 34);
-    display.print("Hi:");
-    display.print(t_high, 1);
-    display.print(" Lo:");
-    display.println(t_low, 1);
-
-    display.setCursor(0, 44);
-    display.print("Humidity: ");
-    display.print((int)humidity);
-    display.println("%");
-  }
-
-  display.drawLine(0, 55, 128, 55, WHITE);
-  display.setCursor(0, 57);
-  display.print("BTN: back to clock");
+  display.setCursor(0,14);
+  display.println(w_desc);
+  display.setCursor(0,26);
+  display.print("Temp (C):");
+  display.println(temp);
+  display.setCursor(0,38);
+  display.print("High/Low:");
+  display.print(t_high);
+  display.print("; ");
+  display.println(t_low);
+  display.setCursor(0, 56);
+  display.print("BTN:return to clock");
   display.display();
 }
 
@@ -673,11 +628,12 @@ void drawSetAlarm() {
 
 String formatElapsed(unsigned long elapsedMs) {
   unsigned long totalSeconds = elapsedMs / 1000;
-  unsigned long hours   = totalSeconds / 3600;
+  unsigned long hours = totalSeconds / 3600;
   unsigned long minutes = (totalSeconds % 3600) / 60;
   unsigned long seconds = totalSeconds % 60;
+
   String result = "";
-  if (hours < 10)   result += "0";
+  if (hours < 10) result += "0";
   result += String(hours) + ":";
   if (minutes < 10) result += "0";
   result += String(minutes) + ":";
@@ -690,27 +646,31 @@ void drawAlarmOn() {
   display.clearDisplay();
   display.drawBitmap(0, 0, cat_bits, 22, 16, WHITE);
   display.drawBitmap(106, 0, cat_bits, 22, 16, WHITE);
+
   display.setTextSize(2);
   display.setCursor(15, 15);
   display.println("WAKE UP!");
+
   if (ringingAlarmIdx >= 0) {
     String name = alarms[ringingAlarmIdx].name;
     if (name.length() > 20) name = name.substring(0, 20);
+
     display.setTextSize(1);
     display.setCursor(64 - (name.length() * 3), 33);
     display.print(name);
+
     display.setCursor(30, 44);
     display.print("TIME ");
     display.print(formatElapsed(millis() - alarmStartMillis));
   }
+
   display.setCursor(5, 57);
   display.println("SMACK ME to stop!");
   display.display();
 }
 
-// ────────────────────────────────
 // HANDLERS
-// ────────────────────────────────
+
 void handleMenu() {
   String dir = getJoyDir();
   if (dir == "UP")   menuIndex = (menuIndex - 1 + MENU_ITEMS) % MENU_ITEMS;
@@ -724,19 +684,24 @@ void handleMenu() {
 
 void handleAlarmList() {
   String dir = getJoyDir();
-  if (dir == "UP")    alarmListIndex = (alarmListIndex - 1 + MAX_ALARMS) % MAX_ALARMS;
-  if (dir == "DOWN")  alarmListIndex = (alarmListIndex + 1) % MAX_ALARMS;
+  if (dir == "UP")   alarmListIndex = (alarmListIndex - 1 + MAX_ALARMS) % MAX_ALARMS;
+  if (dir == "DOWN") alarmListIndex = (alarmListIndex + 1) % MAX_ALARMS;
   if (dir == "RIGHT") alarms[alarmListIndex].active = !alarms[alarmListIndex].active;
   if (dir == "LEFT")  currentScreen = SCREEN_CLOCK;
   if (getBtnPress()) {
     editingAlarm = alarmListIndex;
-    editField    = 0;
+    editField = 0;
     currentScreen = SCREEN_SET_ALARM;
   }
 }
 
 void handleWeather() {
-  if (getBtnPress()) currentScreen = SCREEN_CLOCK;
+  String dir = getJoyDir();
+  if (getBtnPress() || dir == "LEFT") {
+    currentScreen = SCREEN_CLOCK;
+    return;
+  }
+  syncWeather();
 }
 
 void handleSetAlarm() {
@@ -759,7 +724,7 @@ void handleSetAlarm() {
   if (!digitalRead(JOY_BTN)) {
     if (btnHoldStart == 0) btnHoldStart = millis();
     if (millis() - btnHoldStart > 1000) {
-      btnHoldStart  = 0;
+      btnHoldStart = 0;
       currentScreen = SCREEN_ALARM_LIST;
     }
   } else {
@@ -770,15 +735,25 @@ void handleSetAlarm() {
 // ────────────────────────────────
 // WEB SERVER
 // ────────────────────────────────
+String htmlEscape(String value) {
+  value.replace("&", "&amp;");
+  value.replace("<", "&lt;");
+  value.replace(">", "&gt;");
+  value.replace("\"", "&quot;");
+  value.replace("'", "&#39;");
+  return value;
+}
+
 void handleWebPost() {
   String msg = "";
 
   if (server.hasArg("action") && server.arg("action") == "settings") {
-    String newName    = server.hasArg("userName") ? server.arg("userName") : "";
-    String newWebhook = server.hasArg("webhook")  ? server.arg("webhook")  : "";
-    String newApiKey  = server.hasArg("apikey")   ? server.arg("apikey")   : "";
+    String newName = server.hasArg("userName") ? server.arg("userName") : "";
+    String newWebhook = server.hasArg("webhook") ? server.arg("webhook") : "";
+    String newLat = server.hasArg("lat") ? server.arg("lat") : "";
+    String newLon = server.hasArg("lon") ? server.arg("lon") : "";
     bool clearWebhook = server.hasArg("clearWebhook") && server.arg("clearWebhook") == "1";
-    bool clearCoord   = server.hasArg("clearCoord")   && server.arg("clearCoord")   == "1";
+    bool clearCoord = server.hasArg("clearCoord") && server.arg("clearCoord") == "1";
 
     newName.trim();
     if (newName.length() > 32) newName = newName.substring(0, 32);
@@ -791,37 +766,28 @@ void handleWebPost() {
       if (validDiscordWebhook(newWebhook)) {
         discordWebhookUrl = newWebhook;
       } else {
-        msg = "Webhook not saved: enter a valid Discord webhook URL.";
+        msg = "Webhook was not saved: enter a Discord webhook URL.";
       }
     }
 
-    if (newApiKey.length() > 0) {
-      newApiKey.trim();
-      openWeatherApiKey = newApiKey;
-    }
-
-    if (server.hasArg("lat") && server.hasArg("lon") && !clearCoord) {
-      String latStr = server.arg("lat");
-      String lonStr = server.arg("lon");
-      latStr.trim(); lonStr.trim();
-      if (latStr.length() > 0 && lonStr.length() > 0) {
-        float newLat = latStr.toFloat();
-        float newLon = lonStr.toFloat();
-        if (newLat >= -90 && newLat <= 90 && newLon >= 0 && newLon <= 360) {
-          lat = newLat;
-          lon = newLon;
-          syncWeather();
-        } else {
-          msg = "Invalid coordinates.";
-        }
+    if (clearCoord) {
+      lat = 0;
+      lon = 0;
+    } else {
+      if (newLat.length() > 0) {
+        lat = newLat.toFloat();
+      }
+      if (newLon.length() > 0) {
+        lon = newLon.toFloat();
       }
     }
 
-    if (clearCoord) { lat = -999; lon = -999; }
+    wthr = "https://api.openweathermap.org/data/2.5/weather?lat=" + String(lat) +
+           "&lon=" + String(lon) + "&appid=" + String(openWeatherApiKey) + "&units=metric";
 
     if (msg == "") {
       saveWebSettings();
-      msg = "Settings saved";
+      msg = "All settings saved";
     }
   }
 
@@ -845,17 +811,20 @@ void handleWebPage() {
   if (server.hasArg("action") && server.arg("action") == "save" &&
       server.hasArg("h") && server.hasArg("m") &&
       server.hasArg("slot") && server.hasArg("name")) {
+
     int slot = server.arg("slot").toInt();
-    int h    = server.arg("h").toInt();
-    int m    = server.arg("m").toInt();
+    int h = server.arg("h").toInt();
+    int m = server.arg("m").toInt();
     String name = server.arg("name");
+
     if (slot >= 0 && slot < MAX_ALARMS && h >= 0 && h <= 23 && m >= 0 && m <= 59) {
       name.trim();
       if (name.length() == 0) name = "Alarm " + String(slot + 1);
       if (name.length() > 32) name = name.substring(0, 32);
-      alarms[slot].h      = h;
-      alarms[slot].m      = m;
-      alarms[slot].name   = name;
+
+      alarms[slot].h = h;
+      alarms[slot].m = m;
+      alarms[slot].name = name;
       alarms[slot].active = true;
       msg = alarms[slot].name + " saved and turned ON";
     }
@@ -869,8 +838,8 @@ void handleWebPage() {
 <meta name='viewport' content='width=device-width, initial-scale=1'>
 <title>SMAC</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f5f0eb; color:#2c2420; min-height:100vh; padding:24px 16px; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#f5f0eb; color:#2c2420; min-height:100vh; padding:24px 16px; }
   .wrap { max-width:390px; margin:0 auto; }
   .header { text-align:center; margin-bottom:24px; }
   .cat-svg { display:block; margin:0 auto 12px; }
@@ -894,14 +863,14 @@ void handleWebPage() {
   .field.wide { flex:2; }
   .field label { display:block; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#b08878; margin-bottom:5px; }
   .field input, .field select { width:100%; padding:10px 11px; border:1.5px solid #d8cdc4; border-radius:8px; background:#faf6f2; color:#2c2420; font-size:15px; font-family:inherit; outline:none; }
-  .field input:focus, .field select:focus { border-color:#c8a882; }
-  .btn { width:100%; padding:12px; background:#9a6a4a; color:#faf6f2; border:none; border-radius:9px; font-size:14px; font-family:inherit; cursor:pointer; margin-top:4px; }
+  .btn { width:100%; padding:12px; background:#9a6a4a; color:#faf6f2; border:none; border-radius:9px; font-size:14px; font-family:inherit; cursor:pointer; }
   .btn:active { background:#7a4a2a; }
   .status { margin-top:8px; padding:9px 10px; border-radius:8px; background:#f0e7df; color:#6c5448; font-size:11px; text-align:center; }
   .hint { font-size:10px; color:#9a8276; margin-top:8px; text-align:center; line-height:1.4; }
   .checkbox { display:flex; align-items:center; gap:7px; margin:9px 0 3px; color:#6c5448; font-size:11px; }
   .checkbox input { width:auto; }
   .msg { margin-top:12px; padding:10px 12px; background:#e8d8c8; color:#6a4030; border-radius:9px; font-size:13px; text-align:center; }
+  @media (max-width:360px) { .form-row { flex-wrap:wrap; } .field.wide { flex-basis:100%; } }
 </style>
 </head>
 <body>
@@ -929,7 +898,9 @@ void handleWebPage() {
 
   <div class='time-label'>Current time</div>
   <div class='time-display'>)";
+
   page += String(clockH) + ":" + (clockM < 10 ? "0" : "") + String(clockM);
+
   page += R"(</div>
 
   <div class='divider'></div>
@@ -955,7 +926,9 @@ void handleWebPage() {
       <div class='form-row'>
         <div class='field wide'><label>Name</label><input type='text' name='name' maxlength='32' placeholder='e.g. WAKE UP!!'></div>
         <div class='field'><label>Slot</label><select name='slot'>)";
+
   for (int i = 0; i < MAX_ALARMS; i++) page += "<option value='" + String(i) + "'>Alarm " + String(i + 1) + "</option>";
+
   page += R"(</select></div>
       </div>
       <div class='form-row'>
@@ -972,82 +945,86 @@ void handleWebPage() {
   <div class='box'>
     <form method='POST'>
       <input type='hidden' name='action' value='settings'>
-      <div class='form-row'>
-        <div class='field'><label>Latitude</label><input type='text' name='lat' placeholder='e.g. 40.7128' value=')";
-  page += (lat != -999) ? String(lat, 4) : "";
-  page += R"('></div>
-        <div class='field'><label>Longitude</label><input type='text' name='lon' placeholder='e.g. -74.0060' value=')";
-  page += (lon != -999) ? String(lon, 4) : "";
-  page += R"('></div>
+      <div class='field' style='margin-bottom:11px'>
+        <label>Latitude</label>
+        <input type='text' name='lat' maxlength='32' value=')";
+  page += String(lat);
+  page += R"(' placeholder='e.g. 32'>
       </div>
-      <div class='field' style='margin-bottom:11px'><label>OpenWeather API Key</label>
-        <input type='password' name='apikey' placeholder=')";
-  page += openWeatherApiKey.length() > 0 ? "Saved — leave blank to keep" : "Paste your API key";
-  page += R"(' autocomplete='off'></div>
-      <label class='checkbox'><input type='checkbox' name='clearCoord' value='1'> Clear saved coordinates</label>
-      <button class='btn' type='submit'>Save weather settings</button>
+      <div class='field'>
+        <label>Longitude</label>
+        <input type='text' name='lon' maxlength='32' value=')";
+  page += String(lon);
+  page += R"(' placeholder='e.g. 32'>
+      </div>
+      <label class='checkbox'><input type='checkbox' name='clearCoord' value='1'> Clear the saved coordinates</label>
+      <button class='btn' type='submit'>Save Weather settings</button>
     </form>
     <div class='status'>)";
-  page += (lat != -999 && lon != -999) ? "Coordinates configured" : "Coordinates not configured";
+  page += (lat >= -90 && lat<=90) && (lon >= -180 && lon <= 180) ? "Weather configured" : "Weather not configured";
   page += R"(</div>
-    <div class='hint'>Get your free API key at openweathermap.org</div>
-  </div>
+    <div class='hint'>Use your coordinates to set the weather report in SMAC. Input latitude between [-90, 90] and longitude between [-180, 180].</div>
+  </div>)";
 
-  <div class='divider'></div>
+  page += R"(<div class='divider'></div>
   <div class='section-title'>Discord settings</div>
   <div class='box'>
     <form method='POST'>
       <input type='hidden' name='action' value='settings'>
-      <div class='field' style='margin-bottom:11px'><label>Your name</label>
+      <div class='field' style='margin-bottom:11px'>
+        <label>Your name</label>
         <input type='text' name='userName' maxlength='32' value=')";
   page += htmlEscape(userName);
-  page += R"(' placeholder='e.g. Eve Lin'></div>
-      <div class='field'><label>Discord webhook URL</label>
+  page += R"(' placeholder='e.g. Eve Lin'>
+      </div>
+      <div class='field'>
+        <label>Discord webhook URL</label>
         <input type='password' name='webhook' placeholder=')";
-  page += discordWebhookUrl.length() > 0 ? "Saved — leave blank to keep" : "Paste your Discord webhook URL";
-  page += R"(' autocomplete='off'></div>
-      <label class='checkbox'><input type='checkbox' name='clearWebhook' value='1'> Clear saved webhook</label>
+  page += discordWebhookUrl.length() > 0 ? "Saved — leave blank to keep it" : "Paste your Discord webhook URL";
+  page += R"(' autocomplete='off'>
+      </div>
+      <label class='checkbox'><input type='checkbox' name='clearWebhook' value='1'> Clear the saved webhook</label>
       <button class='btn' type='submit'>Save Discord settings</button>
     </form>
     <div class='status'>)";
   page += discordWebhookUrl.length() > 0 ? "Webhook configured" : "Webhook not configured";
   page += R"(</div>
-    <div class='hint'>The webhook URL is stored in ESP32 flash and never shown on screen.</div>
+    <div class='hint'>The name is used in the Discord callout. The webhook is saved in ESP32 flash and is not displayed back on the page.</div>
   </div>)";
 
   if (msg != "") page += "<div class='msg'>" + htmlEscape(msg) + "</div>";
-  page += "</div></body></html>";
+  page += R"(
+</div>
+</body>
+</html>)";
   server.send(200, "text/html", page);
 }
 
 void setupWebServer() {
-  server.on("/", HTTP_GET,  handleWebPage);
+  server.on("/", HTTP_GET, handleWebPage);
   server.on("/", HTTP_POST, handleWebPost);
   server.begin();
   Serial.print("Web server at: http://");
   Serial.println(WiFi.localIP());
 }
 
-// ────────────────────────────────
 // SETUP
-// ────────────────────────────────
+
 void setup() {
   Serial.begin(115200);
 
-  // motor pins
-  pinMode(LEFT_MOTOR_A,  OUTPUT);
-  pinMode(LEFT_MOTOR_B,  OUTPUT);
-  pinMode(RIGHT_MOTOR_A, OUTPUT);
-  pinMode(RIGHT_MOTOR_B, OUTPUT);
-  stopMotors(); 
-
+  pinMode(JOY_BTN, INPUT_PULLUP);
+  pinMode(STOP_BTN, INPUT_PULLUP);
+  pinMode(MOTOR_A1, OUTPUT);
+  pinMode(MOTOR_A2, OUTPUT);
+  pinMode(MOTOR_B1, OUTPUT);
+  pinMode(MOTOR_B2, OUTPUT);
   pinMode(IR_SENSOR_PIN, INPUT);
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
-  pinMode(JOY_BTN,  INPUT_PULLUP);
-  pinMode(STOP_BTN, INPUT_PULLUP);
 
-  setupADC(); 
+  stopMotors();
+  setupADC();
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println("No display found, continuing...");
@@ -1067,7 +1044,7 @@ void setup() {
 
   connectWifi();
   syncTime();
-  syncWeather(); // sync weather on boot
+  syncWeather();
   loadWebSettings();
   setupWebServer();
 
@@ -1078,9 +1055,8 @@ void setup() {
   Serial.println("SMAC ready!");
 }
 
-// ────────────────────────────────
 // LOOP
-// ────────────────────────────────
+
 void loop() {
   server.handleClient();
   tickClock();
@@ -1092,28 +1068,29 @@ void loop() {
       currentScreen = SCREEN_MENU;
       menuIndex = 0;
     }
+    stopMotors();
   }
   else if (currentScreen == SCREEN_MENU) {
     drawMenu();
     handleMenu();
+    stopMotors();
   }
   else if (currentScreen == SCREEN_ALARM_LIST) {
     drawAlarmList();
     handleAlarmList();
+    stopMotors();
   }
   else if (currentScreen == SCREEN_SET_ALARM) {
     drawSetAlarm();
     handleSetAlarm();
-  }
-  else if (currentScreen == SCREEN_WEATHER) { // fixed == not =
-    drawWeather();
-    handleWeather();
+    stopMotors();
   }
   else if (currentScreen == SCREEN_ALARM_ON) {
     drawAlarmOn();
     if (!digitalRead(STOP_BTN)) {
       unsigned long wakeTime = millis() - alarmStartMillis;
       String elapsed = formatElapsed(wakeTime);
+
       stopMotors();
       delay(50);
       alarmRinging = false;
@@ -1124,13 +1101,14 @@ void loop() {
       } else {
         wakeMsg = "✅ **Alarm stopped!**\n";
       }
+
       if (ringingAlarmIdx >= 0) {
         wakeMsg += "Alarm: **" + alarms[ringingAlarmIdx].name + "**\n";
       }
       wakeMsg += "⏱️ Time to wake up: **" + elapsed + "**";
       sendDiscord(wakeMsg);
 
-      currentScreen   = SCREEN_CLOCK;
+      currentScreen = SCREEN_CLOCK;
       ringingAlarmIdx = -1;
     }
 
@@ -1143,5 +1121,9 @@ void loop() {
     } else {
       moveForward();
     }
+  }
+  else if (currentScreen == SCREEN_WEATHER) {
+    drawWeather();
+    handleWeather();
   }
 }
